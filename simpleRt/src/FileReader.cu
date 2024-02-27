@@ -20,7 +20,7 @@
 using namespace rapidjson;
 using namespace std;
 
-
+#define M_PI 3.14159267
 
 void FileReader::read_obj_file(char *dir, vector<hittable*> &vec_obj_list, material *mat_ptr) {
 	std::string filename(dir);

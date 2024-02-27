@@ -3,6 +3,7 @@
 #include "bvh.cuh"
 #include "material.cuh"
 #include "ray.cuh"
+#include <float.h>
 
 #define MAX_LEAF_OBJ 10
 #define MAX_DEPTH 30
@@ -10,10 +11,10 @@
 
 bvh_node::bvh_node() {
 	type = type_bvh_node;
-	mat_ptr = NULL;
-	obj_list = NULL;
-	left = NULL;
-	right = NULL;
+	mat_ptr = nullptr;
+	obj_list = nullptr;
+	left = nullptr;
+	right = nullptr;
 }
 
 
@@ -29,9 +30,9 @@ bool bvh_node::bounding_box(float t0, float t1, aabb& b) {
 }
 
 __device__ void bvh_node::refit() {
-	if (left == NULL and right == NULL)
+	if (left == nullptr && right == nullptr) {
 		obj_list->bounding_box(0, 1, box);
-	else {
+	} else {
 		((bvh_node*) left)->refit();
 		((bvh_node*) right)->refit();
 
@@ -40,7 +41,6 @@ __device__ void bvh_node::refit() {
         right->bounding_box(0, 1, box_r);
         box = surrounding_box(box_l, box_r);
 	}
-
 }
 
 __device__ bool bvh_node::hit(const ray& r, float t_min, float t_max, hit_record& rec) const {
@@ -60,7 +60,7 @@ __device__ bool bvh_node::hit(const ray& r, float t_min, float t_max, hit_record
 		bvh_node *p = (bvh_node*)node_stack[top--];
 		if ((p->box).hit(r, t_min, rec.t)) { //p->box.hit(r, t_min, rec.t)
 			//Leaf node
-			if (p->left == NULL && p->right == NULL) {
+			if (p->left == nullptr && p->right == nullptr) {
 				is_hit |= p->obj_list->hit(r, t_min, rec.t, rec);
 			}
 			else {
@@ -76,7 +76,7 @@ __device__ bool bvh_node::hit(const ray& r, float t_min, float t_max, hit_record
 
 __global__ void visit(bvh_node **root, int *result) {
 	//bvh_node *tmp = *root;
-	//while(tmp!=NULL)
+	//while(tmp!=nullptr)
 	//	tmp = (bvh_node*)tmp->left;
 	//tmp = (bvh_node*)tmp->right;
 	hittable *node_stack[200];
@@ -85,7 +85,7 @@ __global__ void visit(bvh_node **root, int *result) {
 	int tot = 0;
 	while (top) {
 		bvh_node *p = (bvh_node*)node_stack[top--];
-		if (p->left == NULL && p->right == NULL) {
+		if (p->left == nullptr && p->right == nullptr) {
 			hittable_list* lst = p->obj_list;
 			int lst_size = lst->list_size;
 			tot += lst_size;
@@ -148,14 +148,14 @@ bvh_node::bvh_node(hittable **l, int L, int R, float time0, float time1, int dep
 	// if (depth >= 17)
 	// 	printf("L:%d R:%d depth:%d MAX_DEPTH:%d n:%d MAX_LEAF_OBJ:%d\n", L, R, depth, MAX_DEPTH, n, MAX_LEAF_OBJ);
 	if (depth >= MAX_DEPTH || n <= MAX_LEAF_OBJ) {
-		mat_ptr = NULL;
+		mat_ptr = nullptr;
 		obj_list = new hittable_list(l + L, R - L);
 		obj_list->bounding_box(0, 1, box);
-		left = right = NULL;
+		left = right = nullptr;
 	}
 	else {
-		obj_list = NULL;
-		mat_ptr = NULL;
+		obj_list = nullptr;
+		mat_ptr = nullptr;
 		//hittable **tmp = (hittable**)malloc(n * sizeof(hittable*));
 		l[L]->bounding_box(0, 1, box);
 		for (int i = L + 1; i < R; i++) {
