@@ -8,3 +8,7 @@ tqdm
 torch
 mitsuba
 drjit
+usd-core
+warp-lang
+trimesh
+GPUtil

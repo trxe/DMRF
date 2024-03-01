@@ -13,7 +13,7 @@
 #include <tinyobjloader/tiny_obj_loader.h>
 #include <string>
 #include <neural-graphics-primitives/common.h>
-// #include <fmt/core.h>
+#include <fmt/core.h>
 
 #include "FileReader.cuh"
 
@@ -38,8 +38,8 @@ void FileReader::read_obj_file(char *dir, vector<hittable*> &vec_obj_list, mater
 	}
 
 	if (!err.empty()) {
-		printf("error!!!!\n");
-		// throw std::runtime_error{fmt::format("Error loading obj: {}", err)};
+		// printf("error!!!!\n");
+		throw std::runtime_error{fmt::format("Error loading obj: {}", err)};
 	}
 
 	bool is_transformed = false;
@@ -61,7 +61,7 @@ void FileReader::read_obj_file(char *dir, vector<hittable*> &vec_obj_list, mater
 	// Loop over shapes
 	for (size_t s = 0; s < shapes.size(); s++) {
 		// Loop over faces
-		printf("shapes[s].mesh.num_face_vertices.size() %d\n", (int) shapes[s].mesh.num_face_vertices.size());
+		// printf("shapes[s].mesh.num_face_vertices.size() %d\n", (int) shapes[s].mesh.num_face_vertices.size());
 		size_t index_offset = 0;
 		for (size_t f = 0; f < shapes[s].mesh.num_face_vertices.size(); f++) {
 			size_t fv = size_t(shapes[s].mesh.num_face_vertices[f]);
@@ -77,7 +77,7 @@ void FileReader::read_obj_file(char *dir, vector<hittable*> &vec_obj_list, mater
 			for (size_t v = 0; v < 3; v++) {
 
 				tinyobj::index_t idx = shapes[s].mesh.indices[index_offset + v];
-				printf("%d ", idx.vertex_index);
+				// printf("%d ", idx.vertex_index);
 				const tinyobj::real_t vx = attrib.vertices[3*idx.vertex_index+0];
 				const tinyobj::real_t vy = attrib.vertices[3*idx.vertex_index+1];
 				const tinyobj::real_t vz = attrib.vertices[3*idx.vertex_index+2];
@@ -106,7 +106,7 @@ void FileReader::read_obj_file(char *dir, vector<hittable*> &vec_obj_list, mater
 
 		}
 	}
-	printf("vec_obj_list size %d\n", (int) vec_obj_list.size());
+	// printf("vec_obj_list size %d\n", (int) vec_obj_list.size());
 }
 
 

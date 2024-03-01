@@ -40,6 +40,7 @@
 
 #include <fstream>
 #include <set>
+#define NGP_GUI
 
 #ifdef NGP_GUI
 #  include <imgui/imgui.h>
@@ -983,7 +984,6 @@ void Testbed::imgui() {
 			ImGui::InputTextMultiline("Params", buf, sizeof(buf));
 			ImGui::TreePop();
 		}
-
 	}
 	if (ImGui::CollapsingHeader("Snapshot")) {
 		static char snapshot_filename_buf[128] = "";
@@ -2715,6 +2715,7 @@ void Testbed::render_frame(const Matrix<float, 3, 4>& camera_matrix0, const Matr
 
 	switch (m_testbed_mode) {
 		case ETestbedMode::Nerf:
+			// tlog::success() << "MODE: NERF";
 			if (!m_render_ground_truth || m_ground_truth_alpha < 1.0f) {
 				if (m_hybrid_render == 0)
 					render_nerf(render_buffer, max_res, focal_length, camera_matrix0, camera_matrix1, nerf_rolling_shutter, screen_center, m_stream.get());
@@ -2725,6 +2726,7 @@ void Testbed::render_frame(const Matrix<float, 3, 4>& camera_matrix0, const Matr
 			}
 			break;
 		case ETestbedMode::Sdf:
+			// tlog::success() << "MODE: SDF";
 			{
 				if (m_render_ground_truth && m_sdf.groundtruth_mode == ESDFGroundTruthMode::SDFBricks) {
 					if (m_sdf.brick_data.size() == 0) {

@@ -33,6 +33,7 @@
 
 #include <filesystem/directory.h>
 #include <filesystem/path.h>
+#include <fmt/format.h>
 
 #ifdef copysign
 #undef copysign
@@ -3121,7 +3122,10 @@ const float* Testbed::get_inference_extra_dims(cudaStream_t stream) const {
 void Testbed::init_rt(const char *config_path) {
 	m_simple_rt.n_sample = 1;
 	m_simple_rt.n_bounce = 50;
-	std::cout << "config_path:\n" << config_path << std::endl;
+	fs::path c_fs_path {config_path};
+	if (!c_fs_path.exists()) {
+		throw new std::runtime_error(fmt::format("Config Path not found: {}", config_path));
+	}
 	create_ray_trace_scene(config_path, m_simple_rt.d_world, m_simple_rt.d_lightsrc, m_simple_rt.d_shadow);
 
 	m_simple_rt.rt_nerf_rot = (Eigen::Matrix3f() << 1, 0, 0, 0, 1, 0, 0, 0, 1).finished();
@@ -3249,8 +3253,6 @@ void Testbed::resize_rt(
 	CUDA_CHECK_THROW(cudaMemsetAsync(m_simple_rt.agg_fb, 0, num_pixels * sizeof(vec3), stream));
 
 	render_rand_init<<<blocks, threads>>>(resolution.x(), resolution.y(), m_simple_rt.d_rand_state, spp);
-
-
 }
 
 
