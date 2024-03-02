@@ -28,27 +28,27 @@
     ],
     "objfile": [
         {
-            "dir": "./extra_data/garden_mirror/2_armadillo.obj",
+            "dir": "../extra_data/garden_mirror/2_armadillo.obj",
             "material": 7
         },
         {
-            "dir": "./extra_data/garden_mirror/2_bunny.obj",
+            "dir": "../extra_data/garden_mirror/2_bunny.obj",
             "material": 6
         },
         {
-            "dir": "./extra_data/garden_mirror/2_monkey.obj",
+            "dir": "../extra_data/garden_mirror/2_monkey.obj",
             "material": 12
         },
         {
-            "dir": "./extra_data/garden_mirror/mirror3.obj",
+            "dir": "../extra_data/garden_mirror/mirror3.obj",
             "material": 2
         },
         {
-            "dir": "./extra_data/garden_mirror/transparent_disk.obj",
+            "dir": "../extra_data/garden_mirror/transparent_disk.obj",
             "material": 8
         },
         {
-            "dir": "./extra_data/garden_mirror/garden_288_simplified_crop.obj",
+            "dir": "../extra_data/garden_mirror/garden_288_simplified_crop.obj",
             "material": 11
         }
     ],
