@@ -492,7 +492,12 @@ void Testbed::imgui() {
 
 	if (ImGui::Begin("Toggle")) {
 		bool redraw_needed = false;
-		if (ImGui::RadioButton("show shadow on nerf", m_simple_rt.show_shadow)) {
+		ImGui::Checkbox("light position gizmo", &m_edit_positions);
+		if (ImGui::Checkbox("use point light", &m_simple_rt.use_point_light)) {
+			m_simple_rt.use_point_light = !m_simple_rt.use_point_light;
+			redraw_needed = true;
+		}
+		if (ImGui::Checkbox("show shadow on nerf", &m_simple_rt.show_shadow)) {
 			m_simple_rt.show_shadow = !m_simple_rt.show_shadow;
 			redraw_needed = true;
 		}
@@ -1267,34 +1272,63 @@ void Testbed::draw_visualizations(ImDrawList* list, const Matrix<float, 3, 4>& c
 		if (m_visualize_unit_cube) {
 			visualize_unit_cube(list, world2proj, Eigen::Vector3f::Constant(0.f), Eigen::Vector3f::Constant(1.f), Eigen::Matrix3f::Identity());
 		}
-		if (m_edit_render_aabb) {
-			if (m_testbed_mode == ETestbedMode::Nerf) {
-				visualize_unit_cube(list, world2proj, m_render_aabb.min, m_render_aabb.max, m_render_aabb_to_local);
-				ImGuiIO& io = ImGui::GetIO();
-				float flx = focal.x();
-				float fly = focal.y();
-				Matrix<float, 4, 4> view2proj_guizmo;
-				float zfar = 100.f;
-				float znear = 0.1f;
-				view2proj_guizmo <<
-					fly*2.f/aspect, 0, 0, 0,
-					0, -fly*2.f, 0, 0,
-					0, 0, (zfar+znear)/(zfar-znear), -(2.f*zfar*znear) / (zfar-znear),
-					0, 0, 1, 0;
-				ImGuizmo::SetRect(0, 0, io.DisplaySize.x, io.DisplaySize.y);
-
+		ImGuiIO& io = ImGui::GetIO();
+		float flx = focal.x();
+		float fly = focal.y();
+		Matrix<float, 4, 4> view2proj_guizmo;
+		float zfar = 100.f;
+		float znear = 0.1f;
+		view2proj_guizmo <<
+			fly*2.f/aspect, 0, 0, 0,
+			0, -fly*2.f, 0, 0,
+			0, 0, (zfar+znear)/(zfar-znear), -(2.f*zfar*znear) / (zfar-znear),
+			0, 0, 1, 0;
+		if (m_edit_positions && m_testbed_mode == ETestbedMode::Nerf && !m_simple_rt.h_lightsrc.empty()) {
+			ImGuizmo::SetRect(0, 0, io.DisplaySize.x, io.DisplaySize.y);
+			{
 				Eigen::Matrix4f matrix=Eigen::Matrix4f::Identity();
-				matrix.block<3,3>(0,0) = m_render_aabb_to_local.transpose();
-				Eigen::Vector3f cen = m_render_aabb_to_local.transpose() * m_render_aabb.center();
-				matrix.block<3,4>(0,0).col(3) = cen;
-				if (ImGuizmo::Manipulate((const float*)&world2view, (const float*)&view2proj_guizmo, m_camera_path.m_gizmo_op, ImGuizmo::LOCAL, (float*)&matrix, NULL, NULL)) {
-					m_render_aabb_to_local = matrix.block<3,3>(0,0).transpose();
-					Eigen::Vector3f new_cen = m_render_aabb_to_local * matrix.block<3,4>(0,0).col(3);
-					Eigen::Vector3f old_cen = m_render_aabb.center();
-					m_render_aabb.min += new_cen - old_cen;
-					m_render_aabb.max += new_cen - old_cen;
-					reset_accumulation();
+				vec3 cen = m_simple_rt.h_lightsrc[0];
+				Vector3f light_cen {cen.x(), cen.y(), cen.z()};
+				matrix.block<3,4>(0,0).col(3) = light_cen;
+				if (ImGuizmo::Manipulate((const float*)&world2view, (const float*)&view2proj_guizmo, ImGuizmo::TRANSLATE, ImGuizmo::LOCAL, (float*)&matrix, NULL, NULL)) {
+					light_cen = matrix.block<3,4>(0,0).col(3);
+					m_simple_rt.h_lightsrc[0] = vec3(light_cen[0], light_cen[1], light_cen[2]);
+					CUDA_CHECK_THROW(cudaDeviceSynchronize());
+					copy_hittable_to_gpu<<<1,1>>>(m_simple_rt.h_lightsrc.size(), 0, light_cen[0], light_cen[1], light_cen[2], m_simple_rt.d_lightsrc);
+					CUDA_CHECK_THROW(cudaDeviceSynchronize());
+					reset_accumulation(false, true);
 				}
+			}
+			{
+				Eigen::Matrix4f matrix=Eigen::Matrix4f::Identity();
+				vec3 cen = m_simple_rt.h_world[0];
+				Vector3f obj_cen {cen.x(), cen.y(), cen.z()};
+				matrix.block<3,4>(0,0).col(3) = obj_cen;
+				if (ImGuizmo::Manipulate((const float*)&world2view, (const float*)&view2proj_guizmo, ImGuizmo::TRANSLATE, ImGuizmo::LOCAL, (float*)&matrix, NULL, NULL)) {
+					obj_cen = matrix.block<3,4>(0,0).col(3);
+					m_simple_rt.h_world[0] = vec3(obj_cen[0], obj_cen[1], obj_cen[2]);
+					CUDA_CHECK_THROW(cudaDeviceSynchronize());
+					copy_hittable_to_gpu<<<1,1>>>(m_simple_rt.h_world.size(), 0, obj_cen[0], obj_cen[1], obj_cen[2], m_simple_rt.d_world);
+					CUDA_CHECK_THROW(cudaDeviceSynchronize());
+					reset_accumulation(false, true);
+				}
+			}
+		}
+		if (m_edit_render_aabb && m_testbed_mode == ETestbedMode::Nerf) {
+			visualize_unit_cube(list, world2proj, m_render_aabb.min, m_render_aabb.max, m_render_aabb_to_local);
+			ImGuizmo::SetRect(0, 0, io.DisplaySize.x, io.DisplaySize.y);
+
+			Eigen::Matrix4f matrix=Eigen::Matrix4f::Identity();
+			matrix.block<3,3>(0,0) = m_render_aabb_to_local.transpose();
+			Eigen::Vector3f cen = m_render_aabb_to_local.transpose() * m_render_aabb.center();
+			matrix.block<3,4>(0,0).col(3) = cen;
+			if (ImGuizmo::Manipulate((const float*)&world2view, (const float*)&view2proj_guizmo, m_camera_path.m_gizmo_op, ImGuizmo::LOCAL, (float*)&matrix, NULL, NULL)) {
+				m_render_aabb_to_local = matrix.block<3,3>(0,0).transpose();
+				Eigen::Vector3f new_cen = m_render_aabb_to_local * matrix.block<3,4>(0,0).col(3);
+				Eigen::Vector3f old_cen = m_render_aabb.center();
+				m_render_aabb.min += new_cen - old_cen;
+				m_render_aabb.max += new_cen - old_cen;
+				reset_accumulation();
 			}
 		}
 

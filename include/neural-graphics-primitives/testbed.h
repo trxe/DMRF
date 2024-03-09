@@ -491,6 +491,7 @@ public:
 
 		bool is_allocated = false;
 		bool show_shadow = true;
+		bool use_point_light = true;
 		std::vector<vec3> h_lightsrc;
 		std::vector<vec3> h_world;
 
@@ -1019,6 +1020,7 @@ public:
 	bool m_visualize_unit_cube = false;
 	bool m_snap_to_pixel_centers = false;
 	bool m_edit_render_aabb = false;
+	bool m_edit_positions = false;
 
 	Eigen::Vector3f m_parallax_shift = {0.0f, 0.0f, 0.0f}; // to shift the viewer's origin by some amount in camera space
 
