@@ -3568,7 +3568,7 @@ __global__ void shadow_map(
 
     // vec3 light_src = p + vec3(0., 10., 0.);
 	// WORLD SPACE
-    vec3 light_src = (*d_lightsrc)->sample(&local_rand_state);
+    vec3 light_src = d_lightsrc[0]->center + (*d_lightsrc)->sample(&local_rand_state);
 
     // return;
     float length = (light_src - p).length() + 0.00001f;
@@ -3658,7 +3658,7 @@ __global__ void ray_trace(
 	curandState local_rand_state = rand_state[pixel_index];
 
 	cur_ray = next_ray;
-	// OBJECT SPACE
+	// OBJECT SPACE: ALL RAYS MUST BE ADJUSTED TO OBJECT SPACE BEFORE USING ->hit.
 	vec3 pos = (*world)->center;
 	cur_ray.A -= pos;
 
@@ -3684,7 +3684,7 @@ __global__ void ray_trace(
 			// WORLD SPACE
 			shadow_ray.A += pos;
 			for (int l = 0; l < d_lightsrc_count; ++l) {
-				shadow_ray.B = d_lightsrc[l]->sample(&local_rand_state) - shadow_ray.origin();
+				shadow_ray.B = d_lightsrc[l]->center + d_lightsrc[l]->sample(&local_rand_state) - shadow_ray.origin();
 				float max_dist = shadow_ray.direction().length();
 				shadow_ray.B.make_unit_vector();
 

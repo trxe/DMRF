@@ -7,7 +7,10 @@
 __host__ __device__ sphere::sphere(vec3 cen, float r, material *m)
 	: radius(r){
 	type = type_sphere;
-	center = cen;
+	// for some reason the center doesn't update.
+	// just keep it as 0.
+	// center = cen;
+	center = vec3(0.0, 0.0, 0.0);
 	mat_ptr = m;
 }
 
