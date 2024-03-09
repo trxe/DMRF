@@ -2425,6 +2425,7 @@ __global__ void init_rays_with_payload_kernel_nerf_rt(
 	payload.idx = idx;
 	
 
+	// WORLD SPACE from catch_shadow or ray_trace
 	const float *o = rt_rays[idx].origin().e;
 	const float *d = rt_rays[idx].direction().e;
 	Ray _ray = {Vector3f(o[0], o[1], o[2]), Vector3f(d[0], d[1], d[2])};
@@ -3122,7 +3123,7 @@ void Testbed::init_rt(const char *config_path) {
 	m_simple_rt.n_sample = 1;
 	m_simple_rt.n_bounce = 50;
 	std::cout << "config_path:\n" << config_path << std::endl;
-	create_ray_trace_scene(config_path, m_simple_rt.d_world, m_simple_rt.d_lightsrc, m_simple_rt.d_shadow);
+	create_ray_trace_scene(config_path, m_simple_rt.d_world, m_simple_rt.d_lightsrc, m_simple_rt.d_shadow, m_simple_rt.h_lightsrc, m_simple_rt.h_world);
 
 	m_simple_rt.rt_nerf_rot = (Eigen::Matrix3f() << 1, 0, 0, 0, 1, 0, 0, 0, 1).finished();
 	m_simple_rt.rt_nerf_trans = (Eigen::Vector3f() << 0, 0, 0).finished();
@@ -3178,6 +3179,7 @@ __global__ void init_ray_rt(
 	float u = (x + 0.5f) * (1.f / resolution.x());
 	float v = (y + 0.5f) * (1.f / resolution.y());
 	float ray_time = rolling_shutter.x() + rolling_shutter.y() * u + rolling_shutter.z() * v + rolling_shutter.w() * ld_random_val(sample_index, idx * 72239731);
+	// WORLD SPACE
 	Ray ray = pixel_to_ray(
 		sample_index,
 		{x, y},
@@ -3552,15 +3554,20 @@ __global__ void shadow_map(
 	// 	return;
 	// }
 
-	curandState& local_rand_state = rand_state[pixel_index];
-	
+	// THIS IS FOR THE NERF.
 
-    vec3& p = array_pos[pixel_index];
+	curandState& local_rand_state = rand_state[pixel_index];
+
+	vec3 pos = (*d_world)->center;
+	
+	// WORLD SPACE
+    vec3 p = array_pos[pixel_index];
     // a hack for the rays that do not hit the shadow mesh
     if (p.length() < 0.0001f) // 
     	return;
 
     // vec3 light_src = p + vec3(0., 10., 0.);
+	// WORLD SPACE
     vec3 light_src = (*d_lightsrc)->sample(&local_rand_state);
 
     // return;
@@ -3568,7 +3575,11 @@ __global__ void shadow_map(
     vec3 dir = (light_src - p) / length;
 
     // float light_r = ((sphere *) (((hittable_list*) *world)->list)[g_src])->radius;
+
+	// WORLD SPACE
     ray shadow_ray = ray(p, dir);
+	// OBJECT SPACE
+	shadow_ray.A -= pos;
 
     hit_record shadow_rec;
     bool hit = (*d_world)->hit(shadow_ray, 0.001f, length, shadow_rec);
@@ -3583,8 +3594,9 @@ __global__ void shadow_map(
 }
 
 
+// IN THE NERF WORLD
 __global__ void catch_shadow(
-	ray *array_ray, vec3 *array_pos,
+	ray *array_ray, vec3 *array_pos, hittable** d_world,
 	int max_x, int max_y, hittable **d_shadow, curandState *rand_state) {
 
 	int i = threadIdx.x + blockIdx.x * blockDim.x;
@@ -3592,7 +3604,7 @@ __global__ void catch_shadow(
 	if((i >= max_x) || (j >= max_y)) return;
 	int pixel_index = j*max_x + i;
 
-
+	// WORLD SPACE
 	ray& cur_ray = array_ray[pixel_index];
 	// curandState local_rand_state = rand_state[pixel_index];
 
@@ -3600,6 +3612,7 @@ __global__ void catch_shadow(
 	// 	printf("%f\n", cur_ray._time);
 	hit_record rec;
 
+	// OBJECT SPACE
 	if ((*d_shadow)->hit(cur_ray, 0.001f, cur_ray._time, rec)) {
 		array_pos[pixel_index] = rec.p;
 		// if (rec.t < 99998.0f) {
@@ -3612,10 +3625,17 @@ __global__ void catch_shadow(
 	else {
 		array_pos[pixel_index] = vec3(0., 0., 0.);
 	}
-
 }
 
 __global__ void ray_trace(
+	// NEW PARAMS
+	BoundingBox render_aabb, Matrix3f render_aabb_to_local, float cone_angle_constant,
+	uint32_t sample_index, uint32_t min_mip, 
+	const uint8_t* __restrict__ density_grid, 
+	hittable **d_lightsrc, uint32_t d_lightsrc_count,
+	Matrix3f rt_nerf_rot, Vector3f rt_nerf_trans,
+	bool show_shadow,
+	// END NEW PARAMs
 	vec3 *array_L, bool *array_end, bool *array_next_end, 
 	vec3 *array_attenuation, ray *array_ray, ray *array_next_ray, 
 	int max_x, int max_y, hittable **world, curandState *rand_state) {
@@ -3638,6 +3658,10 @@ __global__ void ray_trace(
 	curandState local_rand_state = rand_state[pixel_index];
 
 	cur_ray = next_ray;
+	// OBJECT SPACE
+	vec3 pos = (*world)->center;
+	cur_ray.A -= pos;
+
 	
 	hit_record rec;
 
@@ -3648,10 +3672,55 @@ __global__ void ray_trace(
 		vec3 attenuation;
 		cur_ray._time = rec.t; 
 		
+		// fix cone_angle.
+		const float cone_angle = cone_angle_constant;
+
 		if(rec.mat_ptr->scatter(
 		    cur_ray, rec, attenuation, scattered, &local_rand_state)) {
-		    cur_attenuation = attenuation;
 
+		    cur_attenuation = attenuation;
+			// OBJECT SPACE
+			ray shadow_ray = scattered;
+			// WORLD SPACE
+			shadow_ray.A += pos;
+			for (int l = 0; l < d_lightsrc_count; ++l) {
+				shadow_ray.B = d_lightsrc[l]->sample(&local_rand_state) - shadow_ray.origin();
+				float max_dist = shadow_ray.direction().length();
+				shadow_ray.B.make_unit_vector();
+
+				// WORLD SPACE
+				Vector3f hit_origin = { shadow_ray.origin().r(), shadow_ray.origin().g(), shadow_ray.origin().b() };
+				// NERF SPACE
+				Vector3f pos = rt_nerf_rot.inverse() * (hit_origin - rt_nerf_trans);
+				// NERF SPACE
+				Vector3f dir = rt_nerf_rot.inverse() * Vector3f{ shadow_ray.direction().r(), shadow_ray.direction().g(), shadow_ray.direction().b() };
+				Vector3f idir = { 1.0f/shadow_ray.direction().r(), 1.0f/shadow_ray.direction().g(), 1.0f/shadow_ray.direction().b() };
+
+				float t = 0.0f;
+				float dt = 0.0f;
+				while (t < max_dist) {
+					pos = hit_origin + t * dir;
+					pos = rt_nerf_rot.inverse() * (pos - rt_nerf_trans);
+					if (!render_aabb.contains(render_aabb_to_local * pos)) {
+						break;
+					}
+
+					uint32_t mip = max(min_mip, mip_from_dt(dt, pos));
+
+					if (!density_grid || density_grid_occupied_at(pos, density_grid, mip)) {
+						break;
+					}
+
+					uint32_t res = NERF_GRIDSIZE()>>mip;
+					t = advance_to_next_voxel(t, cone_angle, pos, dir, idir, res);
+				}
+				// network_input(i + j * n_elements)->set_with_optional_extra_dims(warp_position(pos, train_aabb), warp_direction(dir), warp_dt(dt), extra_dims, network_input.stride_in_bytes); // XXXCONE
+				t += dt;
+
+
+				// COMMENT THIS OUT FOR ORIGINAL
+				if (show_shadow) cur_attenuation *= t / max_dist;
+			}
 			// vec3 unit_direction = unit_vector(cur_ray.direction());
 			// float t = 0.5f*(unit_direction.y() + 1.0f);
 			// L = (1.0f-t)*vec3(1.0, 1.0, 1.0) + t*vec3(0.5, 0.7, 1.0);
@@ -3660,7 +3729,10 @@ __global__ void ray_trace(
 			// printf("%f %f %f --- attenuation %f %f %f\n", 
 			// 	attenuation[0], attenuation[1], attenuation[2], 
 			// 	cur_attenuation[0], cur_attenuation[1], cur_attenuation[2]);
+
+			// OBJECT SPACE
 		    next_ray = scattered;
+			next_ray.A += pos;
 		}
 		else {
 		    array_next_end[pixel_index] = true;
@@ -3677,6 +3749,8 @@ __global__ void ray_trace(
 		array_next_end[pixel_index] = true;
 	}
 
+	// WORLD SPACE
+	cur_ray.A += pos;
 
 }
 
@@ -3738,13 +3812,14 @@ void Testbed::render_nerf_rt(CudaRenderBuffer& render_buffer, const Vector2i& ma
 	const dim3 threads = { 16, 8, 1 };
 	const dim3 blocks = { div_round_up((uint32_t)resolution.x(), threads.x), div_round_up((uint32_t)resolution.y(), threads.y), 1 };
 
+	// SET THROUGHPUT AND RADIANCE
 	resize_rt(resolution, threads, blocks, stream, render_buffer.spp());
-	printf("spp %d\n", render_buffer.spp());
 	bool is_shadow = true;
 	// bool is_shadow = false;
 	for (int i_sample = 0; i_sample < m_simple_rt.n_sample; i_sample++) {
 		// initialize trace
 
+		// 
 		init_bounce_rt(
 			render_buffer.spp(),
 			m_network->padded_output_width(),
@@ -3783,6 +3858,11 @@ void Testbed::render_nerf_rt(CudaRenderBuffer& render_buffer, const Vector2i& ma
 		{
 
 			ray_trace<<<blocks, threads, 0, stream>>>(
+
+				m_render_aabb, m_render_aabb_to_local, m_nerf.cone_angle_constant,
+				i_sample, 0, m_nerf.density_grid_bitfield.data(), m_simple_rt.d_lightsrc, 1, 
+				m_simple_rt.rt_nerf_rot, m_simple_rt.rt_nerf_trans, m_simple_rt.show_shadow,
+
 				m_simple_rt.array_L, m_simple_rt.array_end, m_simple_rt.array_next_end,
 				m_simple_rt.array_attenuation, 
 				m_simple_rt.array_ray, m_simple_rt.array_next_ray,
@@ -3793,14 +3873,15 @@ void Testbed::render_nerf_rt(CudaRenderBuffer& render_buffer, const Vector2i& ma
 			// if (i_bounce == 0 and is_shadow) {
 			if (is_shadow) {
 				catch_shadow<<<blocks, threads, 0, stream>>>(
-					m_simple_rt.array_ray, m_simple_rt.array_pos,
+					m_simple_rt.array_ray, m_simple_rt.array_pos, m_simple_rt.d_world,
 					resolution.x(), resolution.y(), m_simple_rt.d_shadow, m_simple_rt.d_rand_state);
 				CUDA_CHECK_THROW(cudaStreamSynchronize(stream));
 
 
 				shadow_map<<<blocks, threads, 0, stream>>>(
 					m_simple_rt.shadow_decay, m_simple_rt.array_pos, m_simple_rt.array_shadow, 
-					m_simple_rt.array_next_end, resolution.x(), resolution.y(), m_simple_rt.d_world, m_simple_rt.d_lightsrc, m_simple_rt.d_shadow, m_simple_rt.d_rand_state);
+					m_simple_rt.array_next_end, resolution.x(), resolution.y(), m_simple_rt.d_world, 
+					m_simple_rt.d_lightsrc, m_simple_rt.d_shadow, m_simple_rt.d_rand_state);
 
 				CUDA_CHECK_THROW(cudaStreamSynchronize(stream));
 			}

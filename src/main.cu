@@ -89,6 +89,13 @@ int main(int argc, char** argv) {
 		{"snapshot"},
 	};
 
+	ValueFlag<string> rt_info_flag{
+		parser,
+		"RT_INFO",
+		"RT info to load upon startup.",
+		{"rt"},
+	};
+
 	ValueFlag<uint32_t> width_flag{
 		parser,
 		"WIDTH",
@@ -225,6 +232,19 @@ int main(int argc, char** argv) {
 
 			testbed.reload_network_from_file(network_config_path.str());
 			testbed.m_train = !no_train_flag;
+		}
+
+		if (rt_info_flag) {
+			fs::path rt_path = get(rt_info_flag);
+			if (!rt_path.exists()) {
+				tlog::error() << "rt path " << rt_path << " does not exist.";
+				return 1;
+			}
+
+			testbed.init_rt(rt_path.str().c_str());
+			testbed.m_hybrid_render = true;
+		} else {
+			testbed.m_hybrid_render = false;
 		}
 
 		bool gui = !no_gui_flag;
