@@ -1,4 +1,6 @@
 #include "simpleRtAPI.cuh"
+#include <iostream>
+#include <vector>
 
 #define RND_CPU (distribution(generator))
 
@@ -117,7 +119,7 @@ void create_world_cpu(hittable **d_list) {
 
 
 void create_with_bvh_geometry_shadow(
-  const char *config_path, hittable **&d_world, hittable **&d_lightsrc, hittable **&d_shadow) {
+  const char *config_path, hittable **&d_world, hittable **&d_lightsrc, hittable **&d_shadow, std::vector<vec3>& h_lightsrc_v, std::vector<vec3>& h_world_v) {
   // --------------------- AABB
 
   // ---------------- json scene
@@ -134,6 +136,12 @@ void create_with_bvh_geometry_shadow(
   int size_obj_from_json = vec_obj_from_json.size();
   int size_lightsrc_list = vec_lightsrc_list.size();
   int size_shadow_list = vec_shadow_list.size();
+  for (hittable* light_ptr : vec_lightsrc_list) {
+    h_lightsrc_v.push_back(light_ptr->center);
+  }
+  for (hittable* obj_ptr : vec_obj_from_json) {
+    h_world_v.push_back(obj_ptr->center);
+  }
 
   printf("size_obj_from_json %d\n", size_obj_from_json);
   printf("size_lightsrc_list %d\n", size_lightsrc_list);
@@ -412,9 +420,9 @@ __global__ void rand_init(curandState *rand_state) {
 
 
 
-void create_ray_trace_scene(const char *config_path, hittable **&d_world, hittable **&d_lightsrc, hittable **&d_shadow) {
+void create_ray_trace_scene(const char *config_path, hittable **&d_world, hittable **&d_lightsrc, hittable **&d_shadow, std::vector<vec3>& h_lightsrc, std::vector<vec3>& h_world) {
   // create_with_bvh(d_world);
-  create_with_bvh_geometry_shadow(config_path, d_world, d_lightsrc, d_shadow);
+  create_with_bvh_geometry_shadow(config_path, d_world, d_lightsrc, d_shadow, h_lightsrc, h_world);
 
   // create_without_bvh2(d_world);
   // create_without_bvh2_light_source(d_world);

@@ -7,7 +7,10 @@
 __host__ __device__ sphere::sphere(vec3 cen, float r, material *m)
 	: radius(r){
 	type = type_sphere;
-	center = cen;
+	// for some reason the center doesn't update.
+	// just keep it as 0.
+	// center = cen;
+	center = vec3(0.0, 0.0, 0.0);
 	mat_ptr = m;
 }
 
@@ -19,6 +22,10 @@ __host__ __device__ bool sphere::bounding_box(float t0, float t1, aabb& box){
 
 __device__ bool sphere::hit(const ray& r, float t_min, float t_max, hit_record& rec) const {
 	vec3 oc = r.origin() - center;
+
+	// uint32_t pixel_index = threadIdx.x + blockIdx.x * blockDim.x;
+	// if (pixel_index == 0) printf("center of %d: %f %f %f\n", pixel_index, oc[0], oc[1], oc[2]);
+
 	float a = dot(r.direction(), r.direction());
 	float b = dot(oc, r.direction());
 	float c = dot(oc, oc) - radius * radius;

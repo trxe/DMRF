@@ -72,6 +72,9 @@ namespace fs = filesystem;
 NGP_NAMESPACE_BEGIN
 
 std::atomic<size_t> g_total_n_bytes_allocated{0};
+static float minabs = 5.0f;
+
+__global__ void copy_hittable_to_gpu(uint32_t total_lights, uint32_t idx, float x, float y, float z, hittable** __restrict__ lightsrc_list);
 
 json merge_parent_network_config(const json &child, const fs::path &child_filename) {
 	if (!child.contains("parent")) {
@@ -487,6 +490,34 @@ void Testbed::imgui() {
 	}
 	ImGui::End();
 
+	if (ImGui::Begin("Toggle")) {
+		bool redraw_needed = false;
+		if (ImGui::RadioButton("show shadow on nerf", m_simple_rt.show_shadow)) {
+			m_simple_rt.show_shadow = !m_simple_rt.show_shadow;
+			redraw_needed = true;
+		}
+		ImGui::InputFloat("max slider", &minabs);
+		for (int i = 0; i < m_simple_rt.h_lightsrc.size(); ++i) {
+			if (ImGui::SliderFloat3(fmt::format("Light {}", i).c_str(), m_simple_rt.h_lightsrc[i].e, -minabs, minabs)) {
+				float* src = m_simple_rt.h_lightsrc[i].e; 
+				CUDA_CHECK_THROW(cudaDeviceSynchronize());
+				copy_hittable_to_gpu<<<1,1>>>(m_simple_rt.h_lightsrc.size(), i, src[0], src[1], src[2], m_simple_rt.d_lightsrc);
+				CUDA_CHECK_THROW(cudaDeviceSynchronize());
+				redraw_needed = true;
+			}
+		}
+		for (int i = 0; i < m_simple_rt.h_world.size(); ++i) {
+			if (ImGui::SliderFloat3(fmt::format("Objects {}", i).c_str(), m_simple_rt.h_world[i].e, -minabs, minabs)) {
+				float* src = m_simple_rt.h_world[i].e; 
+				CUDA_CHECK_THROW(cudaDeviceSynchronize());
+				copy_hittable_to_gpu<<<1,1>>>(m_simple_rt.h_world.size(), i, src[0], src[1], src[2], m_simple_rt.d_world);
+				CUDA_CHECK_THROW(cudaDeviceSynchronize());
+				redraw_needed = true;
+			}
+		}
+		if (redraw_needed) reset_accumulation(false, true);
+	}
+	ImGui::End();
 
 	ImGui::Begin("instant-ngp v" NGP_VERSION);
 
@@ -2622,6 +2653,13 @@ Vector2f Testbed::render_screen_center() const {
 	// see pixel_to_ray for how screen center is used; 0.5,0.5 is 'normal'. we flip so that it becomes the point in the original image we want to center on.
 	auto screen_center = m_screen_center;
 	return {(0.5f-screen_center.x())*m_zoom + 0.5f, (0.5-screen_center.y())*m_zoom + 0.5f};
+}
+
+__global__ void copy_hittable_to_gpu(uint32_t total_lights, uint32_t idx, float x, float y, float z, hittable** __restrict__ list) {
+	if (idx >= total_lights) return;
+	list[idx]->center[0] = x;
+	list[idx]->center[1] = y;
+	list[idx]->center[2] = z;
 }
 
 __global__ void dlss_prep_kernel(

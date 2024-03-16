@@ -490,6 +490,9 @@ public:
 		Eigen::Vector3f rt_nerf_trans;
 
 		bool is_allocated = false;
+		bool show_shadow = true;
+		std::vector<vec3> h_lightsrc;
+		std::vector<vec3> h_world;
 
 		int n_sample = 1;
 		int n_bounce = 8;
